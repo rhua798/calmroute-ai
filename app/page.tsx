@@ -23,7 +23,7 @@ export default function Home() {
       <section className="hero" id="top">
         <div className="copy">
           <p className="eyebrow"><i />AI 主动式出行助手</p>
-          <h1>让每一次出发，<br/><em>都有把握。</em></h1>
+          <h1><span>让每一次出发，</span><em>都有把握。</em></h1>
           <p className="lead">从一句自然语言需求出发，主动编排行程、预判风险，并把复杂决策转化为驾驶者一眼就懂的下一步。</p>
           <div className="actions"><a className="primary" href="#demo">体验完整旅程 <b>↗</b></a><a href="#screens">查看设计逻辑 ↓</a></div>
           <div className="facts"><p><b>4</b><span>跨服务能力</span></p><p><b>3</b><span>座舱屏幕协同</span></p><p><b>6</b><span>核心体验指标</span></p></div>
