@@ -78,8 +78,8 @@ npm run build
 ## 分支策略
 
 - `main`：只保留通过验证的稳定版本。
-- `codex/initial-prototype`：当前第一版可交互原型。
-- 后续功能使用 `codex/<feature-name>` 分支，通过 Pull Request 合并。
+- `feature/initial-prototype`：当前第一版可交互原型。
+- 后续功能使用 `feature/<name>` 分支，验证后由项目所有者手动通过 Pull Request 合并。
 
 ## 项目声明
 
