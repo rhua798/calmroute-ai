@@ -31,6 +31,13 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(html, /<title>[^<]*安心领航[^<]*<\/title>/i);
   assert.match(html, /让每一次出发/);
   assert.match(html, /AI 主动式出行助手/);
+  assert.match(html, /可交互 Agent Demo/);
+  assert.match(html, /生成安心行程/);
+  assert.match(html, /在途中注入异常/);
+  assert.match(html, /充电排队/);
+  assert.match(html, /错过出口/);
+  assert.match(html, /道路异常/);
+  assert.match(html, /停车困难/);
   assert.match(html, /上海/);
   assert.match(html, /莫干山/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
