@@ -50,7 +50,7 @@ export default function CaseStudy() {
       <section className="case-section problem-section" id="process">
         <SectionLabel number="01" text="问题定义" />
         <div className="case-two-col">
-          <h2>用户缺的不是更多信息，<br/>而是<span>对下一步的把握。</span></h2>
+          <h2 className="fixed-two-line"><span className="heading-line plain">用户缺的不是更多信息，</span><span className="heading-line accent">而是对下一步的把握。</span></h2>
           <div><p>传统导航以路线为中心，但一次真实出行还受到时间窗口、剩余电量、排队、停车和同行者需求影响。这些变量分散在不同服务中，最终仍需要驾驶者自己拼凑决策。</p><p>产品机会是：让 AI 管理约束和变化，让用户只需要理解当下最重要的一步。</p></div>
         </div>
         <div className="hypothesis-grid">
@@ -72,7 +72,7 @@ export default function CaseStudy() {
 
       <section className="case-section system-section" id="system">
         <SectionLabel number="03" text="系统方案" />
-        <div className="section-title-row"><h2>AI 不直接“猜”路线，<br/>而是<span>编排可验证的能力。</span></h2><p>大模型负责理解需求、拆解任务与生成解释；地图、电量与服务数据负责给出真实结果；规则层负责安全和约束检查。</p></div>
+        <div className="section-title-row"><h2 className="fixed-two-line"><span className="heading-line plain">AI 不直接“猜”路线，</span><span className="heading-line accent">而是编排可验证的能力。</span></h2><p>大模型负责理解需求、拆解任务与生成解释；地图、电量与服务数据负责给出真实结果；规则层负责安全和约束检查。</p></div>
         <div className="architecture">
           <div><small>01 / INPUT</small><b>用户目标与约束</b><span>地点、时间、偏好、电量</span></div><i>→</i>
           <div><small>02 / ORCHESTRATE</small><b>Agent 任务编排</b><span>搜索、算路、充电、停车</span></div><i>→</i>
@@ -84,7 +84,7 @@ export default function CaseStudy() {
 
       <section className="case-section screen-strategy">
         <SectionLabel number="04" text="跨屏策略" />
-        <div className="section-title-row"><h2>同一条信息，<br/>不应在所有屏幕上重复。</h2><p>根据信息的紧迫性、复杂度和操作成本，为 AR-HUD、仪表、中控与语音分配不同职责。</p></div>
+        <div className="section-title-row"><h2 className="fixed-two-line"><span className="heading-line plain">同一条信息，</span><span className="heading-line plain">不应在所有屏幕上重复。</span></h2><p>根据信息的紧迫性、复杂度和操作成本，为 AR-HUD、仪表、中控与语音分配不同职责。</p></div>
         <div className="screen-rule-grid">{screenRules.map((row,i) => <article key={row[0]}><small>0{i+1}</small><h3>{row[0]}</h3><b>{row[1]}</b><p>{row[2]}</p><span>{row[3]}</span></article>)}</div>
       </section>
 
