@@ -87,6 +87,17 @@ export default function Home() {
   const [plan, setPlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海虹桥火车站", "莫干山风景名胜区", "09:00", 72)));
   const incidentData = dynamicIncident(incidents[incident], incident, plan);
 
+  function updateDeparture(nextTime: string) {
+    setRequest(current => syncDepartureInRequest(current, departureInput, nextTime));
+    setDepartureInput(nextTime);
+  }
+
+  function updateBattery(rawValue: string) {
+    const nextBattery = Math.max(10, Math.min(100, Number(rawValue) || 10));
+    setRequest(current => syncBatteryInRequest(current, batteryInput, nextBattery));
+    setBatteryInput(nextBattery);
+  }
+
   async function generatePlan(event: FormEvent) {
     event.preventDefault();
     if (!request.trim()) return;
@@ -174,8 +185,8 @@ export default function Home() {
           <div className="route-fields">
             <label><span>出发地</span><input aria-label="出发地" value={originInput} onChange={event => setOriginInput(event.target.value)} /></label>
             <label><span>目的地</span><input aria-label="目的地" value={destinationInput} onChange={event => setDestinationInput(event.target.value)} /></label>
-            <label><span>出发时间</span><input aria-label="出发时间" type="time" value={departureInput} onChange={event => setDepartureInput(event.target.value)} /></label>
-            <label><span>当前电量</span><div><input aria-label="当前电量" type="number" min="10" max="100" value={batteryInput} onChange={event => setBatteryInput(Math.max(10, Math.min(100, Number(event.target.value))))} /><b>%</b></div></label>
+            <label><span>出发时间</span><input aria-label="出发时间" type="time" value={departureInput} onChange={event => updateDeparture(event.target.value)} /></label>
+            <label><span>当前电量</span><div><input aria-label="当前电量" type="number" min="10" max="100" value={batteryInput} onChange={event => updateBattery(event.target.value)} /><b>%</b></div></label>
           </div>
           <textarea aria-label="出行需求" value={request} onChange={event => setRequest(event.target.value)} rows={4} />
           <div className="example-row"><span>试试示例</span>{examples.map((example, index) => <button type="button" key={example} onClick={() => { const parsed = parseExample(example); setRequest(example); setOriginInput(parsed.origin); setDestinationInput(parsed.destination); setDepartureInput(parsed.time); setBatteryInput(parsed.battery); }}>场景 {index + 1}</button>)}</div>
@@ -215,7 +226,16 @@ export default function Home() {
       <section className="screens" id="screens">
         <Heading number="02" label="跨屏信息策略" title={<>同一段导航，<span>各司其职。</span></>} desc="依据驾驶任务的紧迫性与复杂度，将信息分配到最合适的触点。" />
         <div className="tabs">{(Object.keys(screens) as Screen[]).map(key => <button className={screen === key ? "active" : ""} onClick={() => setScreen(key)} key={key}>{screens[key][0]}</button>)}</div>
-        <div className="cockpit"><div className="road"><i/><i/><b/></div><div className="instruction"><span>立即执行</span><h3>{screens[screen][1]}</h3><p>{screens[screen][2]}</p></div>
+        <div className={`cockpit ${screen === "center" ? "center-mode" : ""}`}>
+          {screen === "center" ? <div className="center-console">
+            <header><p><span>全局决策 · P2</span><b>选择更确定的路线</b></p><small>已比较 3 个可行方案</small></header>
+            <div className="route-choice-grid">
+              <article className="selected"><small>AI 推荐</small><h3>安心路线</h3><strong>2h 18m</strong><p>189.4 km · 经备选补能点</p><div><span>排队风险未知</span><span>全程影响可控</span></div></article>
+              <article><small>时间优先</small><h3>最快路线</h3><strong>2h 05m</strong><p>184.6 km · 原补能点</p><div><span>少 13 min</span><span>补能选择较少</span></div></article>
+              <article><small>里程优先</small><h3>少收费路线</h3><strong>2h 31m</strong><p>181.8 km · 少高速路段</p><div><span>少 ¥18</span><span>多 13 min</span></div></article>
+            </div>
+            <div className="center-decision"><p><span>推荐依据</span><b>优先保留补能选择权</b></p><p><span>影响</span><b>+4.8 km · +13 min</b></p><button type="button">采用安心路线 <b>→</b></button></div>
+          </div> : <><div className="road"><i/><i/><b/></div><div className="instruction"><span>立即执行</span><h3>{screens[screen][1]}</h3><p>{screens[screen][2]}</p></div></>}
           <aside><span>信息分配原则</span><p className={screen === "hud" ? "active" : ""}><b>01 眼前</b>只呈现当下必须执行的动作</p><p className={screen === "cluster" ? "active" : ""}><b>02 预期</b>维持驾驶状态与下一步预期</p><p className={screen === "center" ? "active" : ""}><b>03 决策</b>承载全局信息与复杂交互</p></aside>
         </div>
       </section>
@@ -257,6 +277,23 @@ function parseExample(value: string) {
   const time = timeMatch[1] ? `${timeMatch[1].padStart(2, "0")}:${(timeMatch[2] || "00").padStart(2, "0")}` : "09:00";
   const battery = Number(value.match(/电量\s*(\d{1,3})/)?.[1] ?? 70);
   return { origin, destination, time, battery };
+}
+
+function syncDepartureInRequest(text: string, previousTime: string, nextTime: string) {
+  if (!nextTime) return text;
+  const [previousHour, previousMinute] = previousTime.split(":");
+  const [nextHour, nextMinute] = nextTime.split(":");
+  const chineseTime = nextMinute === "00" ? `${Number(nextHour)} 点` : `${Number(nextHour)} 点 ${Number(nextMinute)} 分`;
+  const candidates = [previousTime, `${Number(previousHour)}:${previousMinute}`, `${Number(previousHour)} 点`, `${Number(previousHour)}点`, `${Number(previousHour)} 时`, `${Number(previousHour)}时`];
+  const matched = candidates.find(candidate => text.includes(candidate));
+  if (matched) return text.replace(matched, chineseTime);
+  return `${text.replace(/[。；;\s]+$/, "")}；出发时间 ${chineseTime}。`;
+}
+
+function syncBatteryInRequest(text: string, previousBattery: number, nextBattery: number) {
+  const previousPattern = new RegExp(`电量\\s*${previousBattery}\\s*%?`);
+  if (previousPattern.test(text)) return text.replace(previousPattern, `电量 ${nextBattery}%`);
+  return `${text.replace(/[。；;\s]+$/, "")}；电量 ${nextBattery}%。`;
 }
 
 function buildPlan(input: ReturnType<typeof parseRequest>, realRoute?: RouteApiResult): GeneratedPlan {

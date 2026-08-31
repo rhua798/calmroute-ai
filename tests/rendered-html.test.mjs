@@ -50,6 +50,7 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(html, /错过出口/);
   assert.match(html, /道路异常/);
   assert.match(html, /停车困难/);
+  assert.match(html, /为什么推荐/);
   assert.match(html, /上海/);
   assert.match(html, /莫干山/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
