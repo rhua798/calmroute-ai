@@ -22,6 +22,13 @@ async function render(path = "/") {
   );
 }
 
+async function callWorker(path, init = {}) {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-api`);
+  const { default: worker } = await import(workerUrl.href);
+  return worker.fetch(new Request(`http://localhost${path}`, init), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
+}
+
 test("server-renders the CalmRoute AI product page", async () => {
   const response = await render();
   assert.equal(response.status, 200);
@@ -35,6 +42,8 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(html, /生成安心行程/);
   assert.match(html, /出发地/);
   assert.match(html, /当前电量/);
+  assert.match(html, /上海虹桥火车站/);
+  assert.match(html, /莫干山风景名胜区/);
   assert.match(html, /路线版本 R(?:<!-- -->)?1/);
   assert.match(html, /在途中注入异常/);
   assert.match(html, /充电排队/);
@@ -44,6 +53,12 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(html, /上海/);
   assert.match(html, /莫干山/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
+});
+
+test("route API keeps the map key server-side", async () => {
+  const response = await callWorker("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: "上海虹桥火车站", destination: "莫干山风景名胜区" }) });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "AMAP_KEY_NOT_CONFIGURED" });
 });
 
 test("server-renders the case study with route-specific metadata", async () => {

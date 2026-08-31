@@ -11,7 +11,8 @@ type Screen = keyof typeof screens;
 
 type Incident = "charge" | "missed" | "road" | "parking";
 type PlanStop = { id: string; type: "start" | "pickup" | "charge" | "meal" | "recovery" | "arrival"; time: string; title: string; detail: string; status: string };
-type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number };
+type RouteApiResult = { source: "amap"; paths: Array<{ distanceMeters: number; durationSeconds: number; strategy: string; tolls: number; trafficLights: number; steps: Array<{ instruction: string; road: string; distanceMeters: number; action: string }> }> };
+type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number; source: "amap" | "demo"; distanceKm: number | null; driveMinutes: number; routeStrategies: string[] };
 
 const incidents: Record<Incident, {
   label: string;
@@ -61,40 +62,52 @@ const incidents: Record<Incident, {
 };
 
 const examples = [
-  "周六 9 点从上海出发去莫干山，先接朋友，中午想吃本地菜；电量 72%，不走小路，民宿要能停车。",
-  "明早从杭州带父母去安吉，两人容易晕车，希望路线平稳，中午 12 点前吃饭并安排一次补能。",
-  "周日下午从苏州去湖州看展，当天往返，优先不排队的充电站，目的地附近需要安全停车。",
+  "周六 9 点从上海虹桥火车站出发去莫干山风景名胜区，先接朋友，中午想吃本地菜；电量 72%，不走小路，目的地要能停车。",
+  "明早从杭州市民中心带父母去安吉竹博园，两人容易晕车，希望路线平稳，中午 12 点前吃饭并安排一次补能。",
+  "周日下午从苏州中心出发去湖州博物馆，当天往返，优先不排队的充电站，目的地附近需要安全停车。",
 ];
 
 export default function Home() {
   const [screen, setScreen] = useState<Screen>("hud");
   const [request, setRequest] = useState(examples[0]);
-  const [originInput, setOriginInput] = useState("上海");
-  const [destinationInput, setDestinationInput] = useState("莫干山");
+  const [originInput, setOriginInput] = useState("上海虹桥火车站");
+  const [destinationInput, setDestinationInput] = useState("莫干山风景名胜区");
   const [departureInput, setDepartureInput] = useState("09:00");
   const [batteryInput, setBatteryInput] = useState(72);
   const [generated, setGenerated] = useState(true);
   const [planning, setPlanning] = useState(false);
+  const [routeError, setRouteError] = useState("");
   const [incident, setIncident] = useState<Incident>("charge");
   const [resolved, setResolved] = useState(false);
   const understanding = useMemo(() => parseRequest(request, originInput, destinationInput, departureInput, batteryInput), [request, originInput, destinationInput, departureInput, batteryInput]);
-  const [basePlan, setBasePlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海", "莫干山", "09:00", 72)));
-  const [plan, setPlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海", "莫干山", "09:00", 72)));
+  const [basePlan, setBasePlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海虹桥火车站", "莫干山风景名胜区", "09:00", 72)));
+  const [plan, setPlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海虹桥火车站", "莫干山风景名胜区", "09:00", 72)));
   const incidentData = dynamicIncident(incidents[incident], incident, plan);
 
-  function generatePlan(event: FormEvent) {
+  async function generatePlan(event: FormEvent) {
     event.preventDefault();
     if (!request.trim()) return;
     setPlanning(true);
     setGenerated(false);
     setResolved(false);
-    window.setTimeout(() => {
-      const nextPlan = buildPlan(understanding);
+    setRouteError("");
+    try {
+      const response = await fetch("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: understanding.origin, destination: understanding.destination }) });
+      const data = await response.json() as RouteApiResult & { error?: string };
+      if (!response.ok || !data.paths?.length) throw new Error(data.error || "ROUTE_REQUEST_FAILED");
+      const nextPlan = buildPlan(understanding, data);
       setBasePlan(nextPlan);
       setPlan(nextPlan);
       setGenerated(true);
+    } catch {
+      const fallbackPlan = buildPlan(understanding);
+      setBasePlan(fallbackPlan);
+      setPlan(fallbackPlan);
+      setGenerated(true);
+      setRouteError("真实路线暂时不可用，当前已回退为演示估算。请检查地点名称或服务配置。");
+    } finally {
       setPlanning(false);
-    }, 650);
+    }
   }
 
   function selectIncident(next: Incident) {
@@ -150,6 +163,7 @@ export default function Home() {
           <div className="example-row"><span>试试示例</span>{examples.map((example, index) => <button type="button" key={example} onClick={() => { const parsed = parseExample(example); setRequest(example); setOriginInput(parsed.origin); setDestinationInput(parsed.destination); setDepartureInput(parsed.time); setBatteryInput(parsed.battery); }}>场景 {index + 1}</button>)}</div>
           <button className="generate-button" disabled={!request.trim() || planning}>{planning ? "正在理解需求并编排行程…" : "生成安心行程"}<b>{planning ? "•••" : "→"}</b></button>
         </form>
+        {routeError && <p className="route-error" role="status">{routeError}</p>}
 
         {generated && <div className="agent-workspace" aria-live="polite">
           <div className="understood">
@@ -157,6 +171,7 @@ export default function Home() {
             <h3>{plan.origin} <i>→</i> {plan.destination}</h3>
             <div className="constraint-tags">{understanding.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
             <p className="agent-note"><b>规划说明</b> 优先保证道路可通行与补能选择权，再优化总时长；停车与用餐作为行程节点统一编排。</p>
+            <div className={`route-proof ${plan.source}`}><b>{plan.source === "amap" ? "高德真实算路" : "演示估算"}</b><span>{plan.distanceKm ? `${plan.distanceKm} km · ` : ""}驾车约 {formatDuration(plan.driveMinutes)}</span><small>{plan.source === "amap" ? `已返回 ${plan.routeStrategies.length} 个路线策略` : "未连接实时道路数据"}</small></div>
           </div>
           <article className="plan"><header><span>03 · 路线版本 R{plan.revision}</span><b>{plan.origin} → {plan.destination}</b></header>
             {plan.stops.map(stop => <Trip key={stop.id} time={stop.time} title={stop.title} detail={stop.detail} status={stop.status} warning={stop.type === "charge" && incident === "charge" && !resolved} />)}
@@ -226,9 +241,10 @@ function parseExample(value: string) {
   return { origin, destination, time, battery };
 }
 
-function buildPlan(input: ReturnType<typeof parseRequest>): GeneratedPlan {
+function buildPlan(input: ReturnType<typeof parseRequest>, realRoute?: RouteApiResult): GeneratedPlan {
   const seed = [...`${input.origin}${input.destination}`].reduce((total, char) => total + char.charCodeAt(0), 0);
-  const driveMinutes = 165 + (seed % 96);
+  const primaryPath = realRoute?.paths?.[0];
+  const driveMinutes = primaryPath ? Math.max(1, Math.round(primaryPath.durationSeconds / 60)) : 165 + (seed % 96);
   const stops: PlanStop[] = [{ id: "start", type: "start", time: input.startTime, title: `从${input.origin}出发`, detail: `当前电量 ${input.battery}% · 已检查全局约束`, status: "准备就绪" }];
   let cursor = 20;
   if (input.hasCompanion) {
@@ -237,7 +253,7 @@ function buildPlan(input: ReturnType<typeof parseRequest>): GeneratedPlan {
   }
   if (input.needsCharge) {
     const chargeAt = Math.max(cursor + 35, Math.round(driveMinutes * .48));
-    stops.push({ id: "charge", type: "charge", time: addMinutes(input.startTime, chargeAt), title: `${input.destination}方向补能点`, detail: "演示估算：充至 82% · 预计 18 分钟", status: "含备用方案" });
+    stops.push({ id: "charge", type: "charge", time: addMinutes(input.startTime, chargeAt), title: `${input.destination}方向补能点`, detail: `${realRoute ? "基于真实路线的补能占位" : "演示估算"}：充至 82% · 预计 18 分钟`, status: "待接入 POI" });
   }
   if (input.needsMeal) {
     const mealAt = Math.max(cursor + 70, Math.round(driveMinutes * .66));
@@ -245,8 +261,8 @@ function buildPlan(input: ReturnType<typeof parseRequest>): GeneratedPlan {
   }
   const extra = (input.needsCharge ? 18 : 0) + (input.needsMeal ? 45 : 0) + (input.hasCompanion ? 12 : 0);
   const arrivalTime = addMinutes(input.startTime, driveMinutes + extra);
-  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: "演示估算" });
-  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1 };
+  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: realRoute ? "高德路线" : "演示估算" });
+  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1, source: realRoute ? "amap" : "demo", distanceKm: primaryPath ? Math.round(primaryPath.distanceMeters / 100) / 10 : null, driveMinutes, routeStrategies: realRoute?.paths.map(path => path.strategy) ?? [] };
 }
 
 function applyIncident(current: GeneratedPlan, incident: Incident): GeneratedPlan {
@@ -289,4 +305,10 @@ function toMinutes(time: string) {
 function addMinutes(time: string, delta: number) {
   const total = (toMinutes(time) + delta + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function formatDuration(minutes: number) {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours ? `${hours} 小时 ${rest} 分钟` : `${rest} 分钟`;
 }
