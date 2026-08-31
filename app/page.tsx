@@ -16,16 +16,16 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#top"><i>A</i><b>安心领航</b><small>AI DRIVE COMPANION</small></a>
-        <nav><a href="#demo">体验原型</a><a href="#screens">跨屏策略</a><a href="#metrics">数据验证</a></nav>
+        <nav><a href="/case-study">案例研究</a><a href="#screens">跨屏策略</a><a href="#metrics">数据验证</a></nav>
         <span className="case">PRODUCT CASE 01</span>
       </header>
 
       <section className="hero" id="top">
         <div className="copy">
           <p className="eyebrow"><i />AI 主动式出行助手</p>
-          <h1>让每一次出发，<br/><em>都有把握。</em></h1>
+          <h1><span>让每一次出发，</span><em>都有把握。</em></h1>
           <p className="lead">从一句自然语言需求出发，主动编排行程、预判风险，并把复杂决策转化为驾驶者一眼就懂的下一步。</p>
-          <div className="actions"><a className="primary" href="#demo">体验完整旅程 <b>↗</b></a><a href="#screens">查看设计逻辑 ↓</a></div>
+          <div className="actions"><a className="primary" href="#demo">体验完整旅程 <b>↗</b></a><a href="/case-study">阅读完整案例 →</a></div>
           <div className="facts"><p><b>4</b><span>跨服务能力</span></p><p><b>3</b><span>座舱屏幕协同</span></p><p><b>6</b><span>核心体验指标</span></p></div>
         </div>
         <div className="map" aria-label="上海到莫干山行程示意图">
