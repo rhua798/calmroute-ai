@@ -11,8 +11,10 @@ type Screen = keyof typeof screens;
 
 type Incident = "charge" | "missed" | "road" | "parking";
 type PlanStop = { id: string; type: "start" | "pickup" | "charge" | "meal" | "recovery" | "arrival"; time: string; title: string; detail: string; status: string };
-type RouteApiResult = { source: "amap"; paths: Array<{ distanceMeters: number; durationSeconds: number; strategy: string; tolls: number; trafficLights: number; steps: Array<{ instruction: string; road: string; distanceMeters: number; action: string }> }> };
-type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number; source: "amap" | "demo"; distanceKm: number | null; driveMinutes: number; routeStrategies: string[] };
+type RoutePath = { distanceMeters: number; durationSeconds: number; strategy: string; tolls: number; trafficLights: number; steps: Array<{ instruction: string; road: string; distanceMeters: number; action: string }> };
+type RoutePoi = { id: string; name: string; location: string; address: string; type: string; typecode: string; distanceMeters: number; parkingType: string };
+type RouteApiResult = { source: "amap"; paths: RoutePath[]; chargingCandidates?: RoutePoi[]; parkingCandidates?: RoutePoi[] };
+type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number; source: "amap" | "demo"; distanceKm: number | null; driveMinutes: number; routeStrategies: string[]; routeOptions: RoutePath[]; chargingCandidates: RoutePoi[]; parkingCandidates: RoutePoi[] };
 
 const incidents: Record<Incident, {
   label: string;
@@ -25,11 +27,11 @@ const incidents: Record<Incident, {
 }> = {
   charge: {
     label: "充电排队",
-    title: "前方补能点预计排队 18 分钟",
-    reason: "实时可用桩降至 2 个，近 15 分钟进站车辆持续增加。",
-    original: "继续等待 · +18 min",
+    title: "模拟异常：前方补能点出现排队",
+    reason: "基于用户调研中的高频痛点注入场景；当前地图接口仅提供充电站位置，不提供实时空闲桩与排队数据。",
+    original: "原补能点 · 排队时间未知",
     recommendation: "切换备用补能点 · +8 km",
-    impact: "无需排队，预计抵达时间不变；多耗电约 2%。",
+    impact: "选择备选地点后重新计算全程；实时排队与价格仍需补能平台确认。",
     action: "切换补能点",
   },
   missed: {
@@ -52,11 +54,11 @@ const incidents: Record<Incident, {
   },
   parking: {
     label: "停车困难",
-    title: "目的地停车场预计满位",
-    reason: "到达时段与景区高峰重叠，近 30 分钟余位持续下降。",
+    title: "模拟异常：目的地停车困难",
+    reason: "基于景区出行调研中的高频痛点注入场景；当前地图接口仅提供停车场位置，不提供实时余位。",
     original: "景区停车 · 等待未知",
     recommendation: "云谷停车场 + 接驳",
-    impact: "步行减少 900 m，费用增加 8 元，抵达时间延后 4 分钟。",
+    impact: "选择备选地点后重新计算全程；实时余位与费用仍需停车平台确认。",
     action: "预留停车方案",
   },
 };
@@ -76,6 +78,7 @@ export default function Home() {
   const [batteryInput, setBatteryInput] = useState(72);
   const [generated, setGenerated] = useState(true);
   const [planning, setPlanning] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [routeError, setRouteError] = useState("");
   const [incident, setIncident] = useState<Incident>("charge");
   const [resolved, setResolved] = useState(false);
@@ -116,14 +119,29 @@ export default function Home() {
     setResolved(false);
   }
 
-  function resolveIncident() {
+  async function resolveIncident() {
     if (resolved) {
       setPlan(basePlan);
       setResolved(false);
       return;
     }
-    setPlan(current => applyIncident(current, incident));
-    setResolved(true);
+    const candidate = incident === "charge" ? (plan.chargingCandidates[1] || plan.chargingCandidates[0]) : incident === "parking" ? (plan.parkingCandidates[1] || plan.parkingCandidates[0]) : undefined;
+    setResolving(true);
+    try {
+      if (plan.source === "amap" && candidate && (incident === "charge" || incident === "parking")) {
+        const response = await fetch("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: plan.origin, destination: plan.destination, waypoint: candidate.location }) });
+        const data = await response.json() as RouteApiResult;
+        if (!response.ok || !data.paths?.length) throw new Error("REROUTE_FAILED");
+        setPlan(current => applyIncident(current, incident, data.paths[0], candidate));
+      } else {
+        setPlan(current => applyIncident(current, incident));
+      }
+      setResolved(true);
+    } catch {
+      setRouteError("备选地点重新算路失败，已保留原路线，请稍后重试。");
+    } finally {
+      setResolving(false);
+    }
   }
   return (
     <main>
@@ -171,7 +189,7 @@ export default function Home() {
             <h3>{plan.origin} <i>→</i> {plan.destination}</h3>
             <div className="constraint-tags">{understanding.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
             <p className="agent-note"><b>规划说明</b> 优先保证道路可通行与补能选择权，再优化总时长；停车与用餐作为行程节点统一编排。</p>
-            <div className={`route-proof ${plan.source}`}><b>{plan.source === "amap" ? "高德真实算路" : "演示估算"}</b><span>{plan.distanceKm ? `${plan.distanceKm} km · ` : ""}驾车约 {formatDuration(plan.driveMinutes)}</span><small>{plan.source === "amap" ? `已返回 ${plan.routeStrategies.length} 个路线策略` : "未连接实时道路数据"}</small></div>
+            <div className={`route-proof ${plan.source}`}><b>{plan.source === "amap" ? "高德真实算路" : "演示估算"}</b><span>{plan.distanceKm ? `${plan.distanceKm} km · ` : ""}驾车约 {formatDuration(plan.driveMinutes)}</span><small>{plan.source === "amap" ? `已返回 ${plan.routeStrategies.length} 个路线策略 · ${plan.chargingCandidates.length} 个沿途充电 POI · ${plan.parkingCandidates.length} 个目的地停车 POI` : "未连接实时道路数据"}</small></div>
           </div>
           <article className="plan"><header><span>03 · 路线版本 R{plan.revision}</span><b>{plan.origin} → {plan.destination}</b></header>
             {plan.stops.map(stop => <Trip key={stop.id} time={stop.time} title={stop.title} detail={stop.detail} status={stop.status} warning={stop.type === "charge" && incident === "charge" && !resolved} />)}
@@ -184,11 +202,11 @@ export default function Home() {
           <article className={`agent ${resolved ? "done" : ""}`}>
             <header><i>AI</i><p><b>安心助手</b><span>{resolved ? "已重新检查后续全部节点" : "在仍有选择余量时发现异常"}</span></p><small>{resolved ? "已处理" : "需要决策"}</small></header>
             <div className="agent-body">
-              <div><label>{resolved ? "行程已恢复" : "检测到行程风险"}</label><h3>{resolved ? `${incidentData.action}成功` : incidentData.title}</h3><p>{resolved ? `已同步更新补能、用餐、停车与抵达预期。${incidentData.impact}` : incidentData.reason}</p></div>
+              <div><label>{resolved ? "行程已恢复" : "检测到行程风险"}</label><h3>{resolved ? `${incidentData.action}成功` : incidentData.title}</h3><p>{resolved ? `已同步更新补能、用餐、停车与抵达预期。${incident === "charge" || incident === "parking" ? "选中地点已作为途经点完成高德重新算路。" : incidentData.impact}` : incidentData.reason}</p></div>
               <div className="compare"><p><span>原方案</span><b>{incidentData.original}</b><small>{resolved ? "已取消" : "当前风险"}</small></p><i>→</i><p><span>推荐方案</span><b>{incidentData.recommendation}</b><small>{incidentData.impact}</small></p></div>
             </div>
             <div className="decision-reason"><b>为什么推荐？</b><span>保留安全选择权</span><span>总行程影响可控</span><span>后续节点无需取消</span></div>
-            <button onClick={resolveIncident}>{resolved ? "撤销并恢复原方案" : `${incidentData.action}并更新全程`}<b>{resolved ? "↩" : "→"}</b></button>
+            <button onClick={resolveIncident} disabled={resolving}>{resolving ? "正在调用高德重新算路…" : resolved ? "撤销并恢复原方案" : `${incidentData.action}并更新全程`}<b>{resolving ? "•••" : resolved ? "↩" : "→"}</b></button>
           </article>
         </div>
         }
@@ -253,7 +271,8 @@ function buildPlan(input: ReturnType<typeof parseRequest>, realRoute?: RouteApiR
   }
   if (input.needsCharge) {
     const chargeAt = Math.max(cursor + 35, Math.round(driveMinutes * .48));
-    stops.push({ id: "charge", type: "charge", time: addMinutes(input.startTime, chargeAt), title: `${input.destination}方向补能点`, detail: `${realRoute ? "基于真实路线的补能占位" : "演示估算"}：充至 82% · 预计 18 分钟`, status: "待接入 POI" });
+    const chargingPoi = realRoute?.chargingCandidates?.[0];
+    stops.push({ id: "charge", type: "charge", time: addMinutes(input.startTime, chargeAt), title: chargingPoi?.name || `${input.destination}方向补能点`, detail: chargingPoi ? `${chargingPoi.address} · 高德沿途 POI` : "演示估算：充至 82% · 预计 18 分钟", status: chargingPoi ? "真实地点" : "待接入 POI" });
   }
   if (input.needsMeal) {
     const mealAt = Math.max(cursor + 70, Math.round(driveMinutes * .66));
@@ -261,15 +280,18 @@ function buildPlan(input: ReturnType<typeof parseRequest>, realRoute?: RouteApiR
   }
   const extra = (input.needsCharge ? 18 : 0) + (input.needsMeal ? 45 : 0) + (input.hasCompanion ? 12 : 0);
   const arrivalTime = addMinutes(input.startTime, driveMinutes + extra);
-  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: realRoute ? "高德路线" : "演示估算" });
-  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1, source: realRoute ? "amap" : "demo", distanceKm: primaryPath ? Math.round(primaryPath.distanceMeters / 100) / 10 : null, driveMinutes, routeStrategies: realRoute?.paths.map(path => path.strategy) ?? [] };
+  const parkingPoi = realRoute?.parkingCandidates?.[0];
+  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: parkingPoi ? `停车建议：${parkingPoi.name} · ${parkingPoi.address}` : input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: realRoute ? "高德路线" : "演示估算" });
+  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1, source: realRoute ? "amap" : "demo", distanceKm: primaryPath ? Math.round(primaryPath.distanceMeters / 100) / 10 : null, driveMinutes, routeStrategies: realRoute?.paths.map(path => path.strategy) ?? [], routeOptions: realRoute?.paths ?? [], chargingCandidates: realRoute?.chargingCandidates ?? [], parkingCandidates: realRoute?.parkingCandidates ?? [] };
 }
 
-function applyIncident(current: GeneratedPlan, incident: Incident): GeneratedPlan {
+function applyIncident(current: GeneratedPlan, incident: Incident, realPath?: RoutePath, selectedPoi?: RoutePoi): GeneratedPlan {
   let stops = current.stops.map(stop => ({ ...stop }));
+  const routeDelta = realPath ? Math.round(realPath.durationSeconds / 60) - current.driveMinutes : 0;
+  if (routeDelta) stops = stops.map((stop, index) => index === 0 ? stop : { ...stop, time: addMinutes(stop.time, routeDelta) });
   if (incident === "charge") {
     const chargeIndex = stops.findIndex(stop => stop.type === "charge");
-    const replacement: PlanStop = { id: "charge-alternative", type: "charge", time: chargeIndex >= 0 ? stops[chargeIndex].time : addMinutes(current.startTime, 95), title: `${current.destination}方向备用补能点`, detail: "已避开排队点 · 多行驶 8 km · 预计补能 16 分钟", status: "已自动替换" };
+    const replacement: PlanStop = { id: "charge-alternative", type: "charge", time: chargeIndex >= 0 ? stops[chargeIndex].time : addMinutes(current.startTime, 95), title: selectedPoi?.name || `${current.destination}方向备用补能点`, detail: selectedPoi ? `${selectedPoi.address} · 已作为途经点重新算路` : "已避开排队点 · 多行驶 8 km · 预计补能 16 分钟", status: selectedPoi ? "高德重新算路" : "已自动替换" };
     if (chargeIndex >= 0) stops.splice(chargeIndex, 1, replacement);
     else {
       stops = stops.map(stop => stop.type === "arrival" ? { ...stop, time: addMinutes(stop.time, 16), status: "已重算 +16 min" } : stop);
@@ -285,15 +307,21 @@ function applyIncident(current: GeneratedPlan, incident: Incident): GeneratedPla
     stops.splice(1, 0, { id: "safe-road", type: "recovery", time: addMinutes(current.startTime, 12), title: "保持高置信度主路", detail: "绕开 1.8 km 低置信道路", status: "增加 4.2 km" });
   }
   if (incident === "parking") {
-    stops = stops.map(stop => stop.type === "arrival" ? { ...stop, time: addMinutes(stop.time, 4), title: `经备用停车点抵达${current.destination}`, detail: "已切换停车场并加入接驳步行段", status: "停车方案已更新" } : stop);
+    stops = stops.map(stop => stop.type === "arrival" ? { ...stop, time: realPath ? stop.time : addMinutes(stop.time, 4), title: `经${selectedPoi?.name || "备用停车点"}抵达${current.destination}`, detail: selectedPoi ? `${selectedPoi.address} · 已作为途经点重新算路` : "已切换停车场并加入接驳步行段", status: selectedPoi ? "高德重新算路" : "停车方案已更新" } : stop);
   }
   const arrivalTime = stops.find(stop => stop.type === "arrival")?.time ?? current.arrivalTime;
-  return { ...current, stops, arrivalTime, revision: current.revision + 1 };
+  return { ...current, stops, arrivalTime, revision: current.revision + 1, distanceKm: realPath ? Math.round(realPath.distanceMeters / 100) / 10 : current.distanceKm, driveMinutes: realPath ? Math.round(realPath.durationSeconds / 60) : current.driveMinutes, routeStrategies: realPath ? [realPath.strategy] : current.routeStrategies };
 }
 
 function dynamicIncident(base: typeof incidents[Incident], incident: Incident, plan: GeneratedPlan) {
-  if (incident === "charge") return { ...base, recommendation: `${plan.destination}方向备用补能点 · +8 km` };
-  if (incident === "parking") return { ...base, recommendation: `${plan.destination}备用停车点 + 接驳` };
+  if (incident === "charge") {
+    const candidate = plan.chargingCandidates[1] || plan.chargingCandidates[0];
+    return candidate ? { ...base, recommendation: candidate.name, impact: "选择后将该充电站作为途经点调用高德重新算路；不包含实时空闲桩、排队或价格。" } : base;
+  }
+  if (incident === "parking") {
+    const candidate = plan.parkingCandidates[1] || plan.parkingCandidates[0];
+    return candidate ? { ...base, recommendation: candidate.name, impact: `位于${candidate.address}；选择后将作为途经点重新算路，不代表实时余位。` } : base;
+  }
   return base;
 }
 

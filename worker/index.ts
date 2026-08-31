@@ -55,6 +55,8 @@ type AmapGeocodeResponse = {
   geocodes?: Array<{ formatted_address: string; location: string; city: string; district: string }>;
 };
 
+type AmapRouteStep = { instruction: string; road: string; distance: string; action: string; polyline?: string };
+
 type AmapDirectionResponse = {
   status: string;
   info: string;
@@ -65,9 +67,15 @@ type AmapDirectionResponse = {
       strategy: string;
       tolls?: string;
       traffic_lights?: string;
-      steps?: Array<{ instruction: string; road: string; distance: string; action: string }>;
+      steps?: AmapRouteStep[];
     }>;
   };
+};
+
+type AmapPlaceResponse = {
+  status: string;
+  info: string;
+  pois?: Array<{ id: string; name: string; location: string; address: string | string[]; type: string; typecode: string; distance?: string; business?: { parking_type?: string }; navi?: { entr_location?: string } }>;
 };
 
 async function handleRouteRequest(request: Request, env: Env): Promise<Response> {
@@ -75,23 +83,32 @@ async function handleRouteRequest(request: Request, env: Env): Promise<Response>
   if (!env.AMAP_WEB_SERVICE_KEY) return json({ error: "AMAP_KEY_NOT_CONFIGURED" }, 503);
 
   try {
-    const body = await request.json() as { origin?: unknown; destination?: unknown };
+    const body = await request.json() as { origin?: unknown; destination?: unknown; waypoint?: unknown };
     const originName = normalizePlace(body.origin);
     const destinationName = normalizePlace(body.destination);
+    const waypoint = normalizeCoordinate(body.waypoint);
     if (!originName || !destinationName) return json({ error: "INVALID_PLACE" }, 400);
 
     const [origin, destination] = await Promise.all([
       geocode(originName, env.AMAP_WEB_SERVICE_KEY),
       geocode(destinationName, env.AMAP_WEB_SERVICE_KEY),
     ]);
-    const direction = await drivingRoute(origin.location, destination.location, env.AMAP_WEB_SERVICE_KEY);
+    const direction = await drivingRoute(origin.location, destination.location, env.AMAP_WEB_SERVICE_KEY, waypoint);
     const paths = direction.route?.paths ?? [];
     if (!paths.length) return json({ error: "ROUTE_NOT_FOUND" }, 404);
+    const routeCenter = routeMidpoint(paths[0]?.steps) || midpoint(origin.location, destination.location);
+    const [charging, parking] = await Promise.all([
+      nearbySearch(routeCenter, "充电站", 30000, env.AMAP_WEB_SERVICE_KEY),
+      nearbySearch(destination.location, "停车场", 5000, env.AMAP_WEB_SERVICE_KEY),
+    ]);
 
     return json({
       source: "amap",
       origin: { name: originName, ...origin },
       destination: { name: destinationName, ...destination },
+      routeCenter,
+      chargingCandidates: charging,
+      parkingCandidates: parking,
       paths: paths.slice(0, 3).map(path => ({
         distanceMeters: Number(path.distance),
         durationSeconds: Number(path.duration),
@@ -113,6 +130,11 @@ function normalizePlace(value: unknown) {
   return trimmed.length >= 2 && trimmed.length <= 80 ? trimmed : "";
 }
 
+function normalizeCoordinate(value: unknown) {
+  if (typeof value !== "string" || !/^-?\d{1,3}(\.\d{1,6})?,-?\d{1,2}(\.\d{1,6})?$/.test(value)) return "";
+  return value;
+}
+
 async function geocode(address: string, key: string) {
   const params = new URLSearchParams({ key, address, output: "JSON" });
   const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?${params}`, { signal: AbortSignal.timeout(8000) });
@@ -123,13 +145,52 @@ async function geocode(address: string, key: string) {
   return { formattedAddress: result.formatted_address, location: result.location, city: String(result.city || ""), district: result.district };
 }
 
-async function drivingRoute(origin: string, destination: string, key: string) {
+async function drivingRoute(origin: string, destination: string, key: string, waypoint = "") {
   const params = new URLSearchParams({ key, origin, destination, strategy: "10", extensions: "all", cartype: "1", output: "JSON" });
+  if (waypoint) params.set("waypoints", waypoint);
   const response = await fetch(`https://restapi.amap.com/v3/direction/driving?${params}`, { signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error("AMAP_ROUTE_UNAVAILABLE");
   const data = await response.json() as AmapDirectionResponse;
   if (data.status !== "1") throw new Error(`AMAP_${data.info || "ROUTE_ERROR"}`);
   return data;
+}
+
+async function nearbySearch(location: string, keywords: string, radius: number, key: string) {
+  const params = new URLSearchParams({ key, location, keywords, radius: String(radius), sortrule: "distance", page_size: "6", page_num: "1", show_fields: "business,navi", output: "JSON" });
+  const response = await fetch(`https://restapi.amap.com/v5/place/around?${params}`, { signal: AbortSignal.timeout(8000) });
+  if (!response.ok) return [];
+  const data = await response.json() as AmapPlaceResponse;
+  if (data.status !== "1") return [];
+  return (data.pois ?? []).map(poi => ({
+    id: poi.id,
+    name: poi.name,
+    location: poi.navi?.entr_location || poi.location,
+    address: Array.isArray(poi.address) ? poi.address.join("") : poi.address || "地址信息暂缺",
+    type: poi.type,
+    typecode: poi.typecode,
+    distanceMeters: Number(poi.distance || 0),
+    parkingType: poi.business?.parking_type || "",
+  }));
+}
+
+function routeMidpoint(steps: AmapRouteStep[] | undefined) {
+  if (!steps?.length) return "";
+  const total = steps.reduce((sum, step) => sum + Number(step.distance || 0), 0);
+  let walked = 0;
+  for (const step of steps) {
+    walked += Number(step.distance || 0);
+    if (walked >= total / 2 && step.polyline) {
+      const points = step.polyline.split(";");
+      return points[Math.floor(points.length / 2)] || "";
+    }
+  }
+  return "";
+}
+
+function midpoint(origin: string, destination: string) {
+  const [originLng, originLat] = origin.split(",").map(Number);
+  const [destinationLng, destinationLat] = destination.split(",").map(Number);
+  return `${((originLng + destinationLng) / 2).toFixed(6)},${((originLat + destinationLat) / 2).toFixed(6)}`;
 }
 
 function json(data: unknown, status = 200) {
