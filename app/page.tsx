@@ -10,6 +10,8 @@ const screens = {
 type Screen = keyof typeof screens;
 
 type Incident = "charge" | "missed" | "road" | "parking";
+type PlanStop = { id: string; type: "start" | "pickup" | "charge" | "meal" | "recovery" | "arrival"; time: string; title: string; detail: string; status: string };
+type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number };
 
 const incidents: Record<Incident, {
   label: string;
@@ -22,10 +24,10 @@ const incidents: Record<Incident, {
 }> = {
   charge: {
     label: "充电排队",
-    title: "安吉服务区预计排队 18 分钟",
+    title: "前方补能点预计排队 18 分钟",
     reason: "实时可用桩降至 2 个，近 15 分钟进站车辆持续增加。",
     original: "继续等待 · +18 min",
-    recommendation: "切换长兴服务区 · +8 km",
+    recommendation: "切换备用补能点 · +8 km",
     impact: "无需排队，预计抵达时间不变；多耗电约 2%。",
     action: "切换补能点",
   },
@@ -65,15 +67,20 @@ const examples = [
 ];
 
 export default function Home() {
-  const [accepted, setAccepted] = useState(false);
   const [screen, setScreen] = useState<Screen>("hud");
   const [request, setRequest] = useState(examples[0]);
+  const [originInput, setOriginInput] = useState("上海");
+  const [destinationInput, setDestinationInput] = useState("莫干山");
+  const [departureInput, setDepartureInput] = useState("09:00");
+  const [batteryInput, setBatteryInput] = useState(72);
   const [generated, setGenerated] = useState(true);
   const [planning, setPlanning] = useState(false);
   const [incident, setIncident] = useState<Incident>("charge");
   const [resolved, setResolved] = useState(false);
-  const understanding = useMemo(() => parseRequest(request), [request]);
-  const incidentData = incidents[incident];
+  const understanding = useMemo(() => parseRequest(request, originInput, destinationInput, departureInput, batteryInput), [request, originInput, destinationInput, departureInput, batteryInput]);
+  const [basePlan, setBasePlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海", "莫干山", "09:00", 72)));
+  const [plan, setPlan] = useState<GeneratedPlan>(() => buildPlan(parseRequest(examples[0], "上海", "莫干山", "09:00", 72)));
+  const incidentData = dynamicIncident(incidents[incident], incident, plan);
 
   function generatePlan(event: FormEvent) {
     event.preventDefault();
@@ -81,22 +88,29 @@ export default function Home() {
     setPlanning(true);
     setGenerated(false);
     setResolved(false);
-    setAccepted(false);
     window.setTimeout(() => {
+      const nextPlan = buildPlan(understanding);
+      setBasePlan(nextPlan);
+      setPlan(nextPlan);
       setGenerated(true);
       setPlanning(false);
     }, 650);
   }
 
   function selectIncident(next: Incident) {
+    if (resolved) setPlan(basePlan);
     setIncident(next);
     setResolved(false);
-    setAccepted(false);
   }
 
   function resolveIncident() {
-    setResolved(value => !value);
-    setAccepted(value => !value);
+    if (resolved) {
+      setPlan(basePlan);
+      setResolved(false);
+      return;
+    }
+    setPlan(current => applyIncident(current, incident));
+    setResolved(true);
   }
   return (
     <main>
@@ -117,8 +131,8 @@ export default function Home() {
         <div className="map" aria-label="上海到莫干山行程示意图">
           <div className="grid"/><div className="route"><i/><i/><i/></div>
           <span className="place sh"><b>上海</b>09:00 出发</span><span className="place hz"><b>湖州</b>补能 18 min</span><span className="place mg"><b>莫干山</b>14:08 抵达</span>
-          <article className="score"><span>出行确定性</span><strong>{accepted ? 91 : 78}<small>/100</small></strong><div><i style={{width: accepted ? "91%" : "78%"}}/></div><p>{accepted ? "风险已解除，抵达时间保持不变" : "最大风险：充电站预计排队 18 分钟"}</p></article>
-          <article className="eta"><span>预计全程</span><strong>{accepted ? "4h 46m" : "5h 02m"}</strong><small>263 km · 抵达剩余 31%</small></article>
+          <article className="score"><span>出行确定性</span><strong>78<small>/100</small></strong><div><i style={{width: "78%"}}/></div><p>最大风险：充电站预计排队 18 分钟</p></article>
+          <article className="eta"><span>预计全程</span><strong>5h 02m</strong><small>263 km · 抵达剩余 31%</small></article>
         </div>
       </section>
 
@@ -126,24 +140,26 @@ export default function Home() {
         <Heading number="01" label="可交互 Agent Demo" title={<>说出你的需求，<br/>把不确定变成<span>下一步。</span></>} desc="输入真实出行需求，Agent 将拆解约束、生成行程，并在异常发生时解释代价、重排全局计划。" />
         <form className="request-console" onSubmit={generatePlan}>
           <div className="request-label"><span>01</span><p><b>描述这次出行</b><small>自然语言输入 · 支持时间、同行人、补能、餐饮与停车偏好</small></p><i>可编辑</i></div>
+          <div className="route-fields">
+            <label><span>出发地</span><input aria-label="出发地" value={originInput} onChange={event => setOriginInput(event.target.value)} /></label>
+            <label><span>目的地</span><input aria-label="目的地" value={destinationInput} onChange={event => setDestinationInput(event.target.value)} /></label>
+            <label><span>出发时间</span><input aria-label="出发时间" type="time" value={departureInput} onChange={event => setDepartureInput(event.target.value)} /></label>
+            <label><span>当前电量</span><div><input aria-label="当前电量" type="number" min="10" max="100" value={batteryInput} onChange={event => setBatteryInput(Math.max(10, Math.min(100, Number(event.target.value))))} /><b>%</b></div></label>
+          </div>
           <textarea aria-label="出行需求" value={request} onChange={event => setRequest(event.target.value)} rows={4} />
-          <div className="example-row"><span>试试示例</span>{examples.map((example, index) => <button type="button" key={example} onClick={() => setRequest(example)}>场景 {index + 1}</button>)}</div>
+          <div className="example-row"><span>试试示例</span>{examples.map((example, index) => <button type="button" key={example} onClick={() => { const parsed = parseExample(example); setRequest(example); setOriginInput(parsed.origin); setDestinationInput(parsed.destination); setDepartureInput(parsed.time); setBatteryInput(parsed.battery); }}>场景 {index + 1}</button>)}</div>
           <button className="generate-button" disabled={!request.trim() || planning}>{planning ? "正在理解需求并编排行程…" : "生成安心行程"}<b>{planning ? "•••" : "→"}</b></button>
         </form>
 
         {generated && <div className="agent-workspace" aria-live="polite">
           <div className="understood">
             <div className="workspace-head"><p><small>02</small><b>Agent 已理解</b></p><span>已识别 {understanding.tags.length} 项约束</span></div>
-            <h3>{understanding.origin} <i>→</i> {understanding.destination}</h3>
+            <h3>{plan.origin} <i>→</i> {plan.destination}</h3>
             <div className="constraint-tags">{understanding.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
             <p className="agent-note"><b>规划说明</b> 优先保证道路可通行与补能选择权，再优化总时长；停车与用餐作为行程节点统一编排。</p>
           </div>
-          <article className="plan"><header><span>03 · 已生成行程</span><b>{understanding.origin} → {understanding.destination}</b></header>
-            <Trip time={understanding.startTime} title={`${understanding.origin}出发`} detail="已完成电量与全局路况检查" status="准备就绪" />
-            <Trip time="09:20" title="接同行人" detail="P6 停车场 · 停留 12 分钟" status="顺路" />
-            <Trip time="11:38" title={resolved && incident === "charge" ? "长兴服务区补能" : "安吉服务区补能"} detail="预计充至 82% · 18 分钟" status={resolved && incident === "charge" ? "已切换" : "留有备选"} warning={incident === "charge" && !resolved} />
-            <Trip time="12:25" title="本地菜午餐" detail="已纳入停车与营业时间" status="顺路 1.8 km" />
-            <Trip time={resolved && incident === "missed" ? "14:17" : "14:08"} title={`抵达${understanding.destination}`} detail={resolved && incident === "parking" ? "云谷停车场 · 接驳抵达" : "预计剩余电量 31% · 已规划停车"} status={resolved ? "行程已同步" : "提前 52 分钟"} />
+          <article className="plan"><header><span>03 · 路线版本 R{plan.revision}</span><b>{plan.origin} → {plan.destination}</b></header>
+            {plan.stops.map(stop => <Trip key={stop.id} time={stop.time} title={stop.title} detail={stop.detail} status={stop.status} warning={stop.type === "charge" && incident === "charge" && !resolved} />)}
           </article>
         </div>}
 
@@ -185,19 +201,92 @@ function Heading({number,label,title,desc}:{number:string;label:string;title:Rea
 function Trip({time,title,detail,status,warning}:{time:string;title:string;detail:string;status:string;warning?:boolean}) { return <div className={`trip ${warning ? "warning" : ""}`}><time>{time}</time><i/><p><b>{title}</b><span>{detail}</span></p><small>{status}</small></div>; }
 function Metric({name,value,unit,delta}:{name:string;value:string;unit:string;delta:string}) { return <article><span>{name}</span><strong>{value}<small>{unit}</small></strong><p><i>{delta}</i> 对比基准方案</p></article>; }
 
-function parseRequest(value: string) {
-  const origin = value.match(/从([^，,。\s]{2,8})(?:出发|去)/)?.[1] ?? "上海";
-  const destination = value.match(/(?:去|到)([^，,。；;]{2,10})/)?.[1]?.replace(/自驾|旅行|玩/g, "") ?? "莫干山";
-  const time = value.match(/(\d{1,2})[点:时](\d{1,2})?/) ?? [];
-  const startTime = time[1] ? `${time[1].padStart(2, "0")}:${(time[2] || "00").padStart(2, "0")}` : "09:00";
+function parseRequest(value: string, origin: string, destination: string, startTime: string, battery: number) {
+  const needsCharge = value.includes("电量") || value.includes("充电") || value.includes("补能") || battery < 80;
+  const needsMeal = value.includes("吃") || value.includes("餐") || value.includes("饭");
+  const hasCompanion = /朋友|两人|同行|父母|孩子|老人/.test(value);
   const tags = [
     `${startTime} 出发`,
-    value.includes("电量") || value.includes("充电") || value.includes("补能") ? "需要补能规划" : "检查续航余量",
+    needsCharge ? `${battery}% 电量 · 需要补能` : `${battery}% 电量 · 续航充足`,
     value.includes("小路") ? "避开低等级道路" : "优先可靠路线",
     value.includes("停车") ? "目的地停车" : "到达前检查停车",
-    value.includes("吃") || value.includes("餐") || value.includes("饭") ? "安排沿途用餐" : "保留休息时间",
+    needsMeal ? "安排沿途用餐" : "保留休息时间",
   ];
   if (/父母|孩子|老人|晕车/.test(value)) tags.push("同行人舒适优先");
-  else if (/朋友|两人|同行/.test(value)) tags.push("含同行节点");
-  return { origin, destination, startTime, tags };
+  else if (hasCompanion) tags.push("含同行节点");
+  return { origin: origin.trim() || "未填写", destination: destination.trim() || "未填写", startTime, battery, tags, needsCharge, needsMeal, hasCompanion, needsParking: value.includes("停车") };
+}
+
+function parseExample(value: string) {
+  const origin = value.match(/从([^，,。\s]{2,8})(?:出发|去)/)?.[1] ?? "上海";
+  const destination = value.match(/(?:去|到)([^，,。；;]{2,10})/)?.[1]?.replace(/自驾|旅行|玩|看展/g, "") ?? "莫干山";
+  const timeMatch = value.match(/(\d{1,2})[点:时](\d{1,2})?/) ?? [];
+  const time = timeMatch[1] ? `${timeMatch[1].padStart(2, "0")}:${(timeMatch[2] || "00").padStart(2, "0")}` : "09:00";
+  const battery = Number(value.match(/电量\s*(\d{1,3})/)?.[1] ?? 70);
+  return { origin, destination, time, battery };
+}
+
+function buildPlan(input: ReturnType<typeof parseRequest>): GeneratedPlan {
+  const seed = [...`${input.origin}${input.destination}`].reduce((total, char) => total + char.charCodeAt(0), 0);
+  const driveMinutes = 165 + (seed % 96);
+  const stops: PlanStop[] = [{ id: "start", type: "start", time: input.startTime, title: `从${input.origin}出发`, detail: `当前电量 ${input.battery}% · 已检查全局约束`, status: "准备就绪" }];
+  let cursor = 20;
+  if (input.hasCompanion) {
+    stops.push({ id: "pickup", type: "pickup", time: addMinutes(input.startTime, cursor), title: "接同行人", detail: "已按需求加入停靠点 · 预留 12 分钟", status: "已编排" });
+    cursor += 12;
+  }
+  if (input.needsCharge) {
+    const chargeAt = Math.max(cursor + 35, Math.round(driveMinutes * .48));
+    stops.push({ id: "charge", type: "charge", time: addMinutes(input.startTime, chargeAt), title: `${input.destination}方向补能点`, detail: "演示估算：充至 82% · 预计 18 分钟", status: "含备用方案" });
+  }
+  if (input.needsMeal) {
+    const mealAt = Math.max(cursor + 70, Math.round(driveMinutes * .66));
+    stops.push({ id: "meal", type: "meal", time: addMinutes(input.startTime, mealAt), title: "沿途用餐", detail: "已根据餐饮偏好预留 45 分钟", status: "可调整" });
+  }
+  const extra = (input.needsCharge ? 18 : 0) + (input.needsMeal ? 45 : 0) + (input.hasCompanion ? 12 : 0);
+  const arrivalTime = addMinutes(input.startTime, driveMinutes + extra);
+  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: "演示估算" });
+  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1 };
+}
+
+function applyIncident(current: GeneratedPlan, incident: Incident): GeneratedPlan {
+  let stops = current.stops.map(stop => ({ ...stop }));
+  if (incident === "charge") {
+    const chargeIndex = stops.findIndex(stop => stop.type === "charge");
+    const replacement: PlanStop = { id: "charge-alternative", type: "charge", time: chargeIndex >= 0 ? stops[chargeIndex].time : addMinutes(current.startTime, 95), title: `${current.destination}方向备用补能点`, detail: "已避开排队点 · 多行驶 8 km · 预计补能 16 分钟", status: "已自动替换" };
+    if (chargeIndex >= 0) stops.splice(chargeIndex, 1, replacement);
+    else {
+      stops = stops.map(stop => stop.type === "arrival" ? { ...stop, time: addMinutes(stop.time, 16), status: "已重算 +16 min" } : stop);
+      stops.splice(Math.max(1, stops.length - 1), 0, replacement);
+    }
+  }
+  if (incident === "missed") {
+    stops = stops.map((stop, index) => index === 0 ? stop : { ...stop, time: addMinutes(stop.time, 9), status: stop.type === "arrival" ? "已重算 +9 min" : stop.status });
+    stops.splice(1, 0, { id: "recovery-exit", type: "recovery", time: addMinutes(current.startTime, 6), title: "从前方出口安全恢复", detail: "禁止掉头 · 已生成连续可执行路线", status: "新增 6.4 km" });
+  }
+  if (incident === "road") {
+    stops = stops.map((stop, index) => index === 0 ? { ...stop, detail: `${stop.detail} · 已避开未铺装道路` } : { ...stop, time: addMinutes(stop.time, 6), status: stop.type === "arrival" ? "已重算 +6 min" : stop.status });
+    stops.splice(1, 0, { id: "safe-road", type: "recovery", time: addMinutes(current.startTime, 12), title: "保持高置信度主路", detail: "绕开 1.8 km 低置信道路", status: "增加 4.2 km" });
+  }
+  if (incident === "parking") {
+    stops = stops.map(stop => stop.type === "arrival" ? { ...stop, time: addMinutes(stop.time, 4), title: `经备用停车点抵达${current.destination}`, detail: "已切换停车场并加入接驳步行段", status: "停车方案已更新" } : stop);
+  }
+  const arrivalTime = stops.find(stop => stop.type === "arrival")?.time ?? current.arrivalTime;
+  return { ...current, stops, arrivalTime, revision: current.revision + 1 };
+}
+
+function dynamicIncident(base: typeof incidents[Incident], incident: Incident, plan: GeneratedPlan) {
+  if (incident === "charge") return { ...base, recommendation: `${plan.destination}方向备用补能点 · +8 km` };
+  if (incident === "parking") return { ...base, recommendation: `${plan.destination}备用停车点 + 接驳` };
+  return base;
+}
+
+function toMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function addMinutes(time: string, delta: number) {
+  const total = (toMinutes(time) + delta + 1440) % 1440;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
