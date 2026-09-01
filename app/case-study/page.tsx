@@ -34,7 +34,7 @@ export default function CaseStudy() {
     <main className="case-page">
       <header className="case-nav">
         <a className="brand" href="/"><i>A</i><b>安心领航</b><small>CASE STUDY</small></a>
-        <div><a href="#process">产品推导</a><a href="#system">方案系统</a><a href="#validation">验证计划</a></div>
+        <div><a href="#process">产品推导</a><a href="#system">方案系统</a><a href="#validation">验证结果</a></div>
         <a className="back-home" href="/">返回原型 ↗</a>
       </header>
 
@@ -89,14 +89,15 @@ export default function CaseStudy() {
       </section>
 
       <section className="case-section validation-section" id="validation">
-        <SectionLabel number="05" text="验证计划" />
-        <div className="section-title-row"><h2>当前是可测试原型，<br/><span>不是已被证明的结论。</span></h2><p>下一阶段将用任务测试检验三个问题：用户能否看懂、是否信任、是否更快做出正确决策。</p></div>
+        <SectionLabel number="05" text="工程验证" />
+        <div className="section-title-row"><h2>先验证系统能否工作，<br/><span>再讨论体验是否更好。</span></h2><p>在无法开展用户访谈的条件下，先用可复现的路线矩阵验证真实算路、服务地点搜索和异常重算；工程结果不冒充用户体验结论。</p></div>
         <div className="validation-grid">
-          <article><small>METHOD 01</small><h3>半结构访谈</h3><p>5–8 名有自驾和新能源补能经验的用户，还原真实决策链路。</p></article>
-          <article><small>METHOD 02</small><h3>情境任务测试</h3><p>对比“只提醒”与“给方案+解释”两组原型的理解和决策耗时。</p></article>
-          <article><small>METHOD 03</small><h3>静态实车演练</h3><p>在停驶车辆中测试跨屏信息层级，避免把交互偏好误当为驾驶安全结论。</p></article>
+          <article><small>TEST 01</small><h3>多城市路线矩阵</h3><p>10 条公开地点路线覆盖沪、苏、浙、皖；使用带城市与区县的地址降低地理编码歧义。</p></article>
+          <article><small>TEST 02</small><h3>服务能力联调</h3><p>每条路线检查充电站与目的地停车场 POI 是否返回，不推断实时空闲、价格或排队。</p></article>
+          <article><small>TEST 03</small><h3>异常恢复验证</h3><p>选取真实备选 POI 作为途经点二次算路，记录距离、时间、响应延迟与失败原因。</p></article>
         </div>
-        <div className="success-metrics"><span><b>≤ 3.0s</b>复杂路口决策时间</span><span><b>≥ 85%</b>推荐理由理解率</span><span><b>≥ 70%</b>AI 建议接受率</span><span><b>≥ 4.2/5</b>主观安全感</span></div>
+        <div className="success-metrics"><span><b>10 条</b>公开路线场景</span><span><b>90%</b>真实算路成功率</span><span><b>90%</b>双类 POI 返回率</span><span><b>90%</b>途经点重算成功率</span></div>
+        <p className="evidence-note"><b>已知限制：</b>1 条千岛湖场景返回地图引擎数据错误；1 条宁波场景虽返回成功但距离异常，暴露出地理编码结果仍需用户确认。中位接口响应约 6.7 秒，本轮测试不衡量理解、信任或驾驶安全。</p>
       </section>
 
       <section className="case-cta"><p>NEXT / INTERACTIVE PROTOTYPE</p><h2>查看“充电站排队”如何触发主动决策。</h2><a href="/#demo">进入交互原型 <span>↗</span></a></section>

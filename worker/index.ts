@@ -137,7 +137,7 @@ function normalizeCoordinate(value: unknown) {
 
 async function geocode(address: string, key: string) {
   const params = new URLSearchParams({ key, address, output: "JSON" });
-  const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?${params}`, { signal: AbortSignal.timeout(8000) });
+  const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?${params}`, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error("AMAP_GEOCODE_UNAVAILABLE");
   const data = await response.json() as AmapGeocodeResponse;
   const result = data.geocodes?.[0];
@@ -148,7 +148,7 @@ async function geocode(address: string, key: string) {
 async function drivingRoute(origin: string, destination: string, key: string, waypoint = "") {
   const params = new URLSearchParams({ key, origin, destination, strategy: "10", extensions: "all", cartype: "1", output: "JSON" });
   if (waypoint) params.set("waypoints", waypoint);
-  const response = await fetch(`https://restapi.amap.com/v3/direction/driving?${params}`, { signal: AbortSignal.timeout(10000) });
+  const response = await fetch(`https://restapi.amap.com/v3/direction/driving?${params}`, { signal: AbortSignal.timeout(16000) });
   if (!response.ok) throw new Error("AMAP_ROUTE_UNAVAILABLE");
   const data = await response.json() as AmapDirectionResponse;
   if (data.status !== "1") throw new Error(`AMAP_${data.info || "ROUTE_ERROR"}`);
@@ -157,7 +157,7 @@ async function drivingRoute(origin: string, destination: string, key: string, wa
 
 async function nearbySearch(location: string, keywords: string, radius: number, key: string) {
   const params = new URLSearchParams({ key, location, keywords, radius: String(radius), sortrule: "distance", page_size: "6", page_num: "1", show_fields: "business,navi", output: "JSON" });
-  const response = await fetch(`https://restapi.amap.com/v5/place/around?${params}`, { signal: AbortSignal.timeout(8000) });
+  const response = await fetch(`https://restapi.amap.com/v5/place/around?${params}`, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) return [];
   const data = await response.json() as AmapPlaceResponse;
   if (data.status !== "1") return [];

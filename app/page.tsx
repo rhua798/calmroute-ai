@@ -242,8 +242,8 @@ export default function Home() {
 
       <section className="metrics" id="metrics">
         <Heading number="03" label="数据验证框架" title={<>用数据回答：<span>体验真的更好吗？</span></>} />
-        <div className="metric-grid"><Metric name="复杂路口决策时间" value="2.9" unit="s" delta="↓ 39.6%"/><Metric name="出口错过率" value="10" unit="%" delta="↓ 20pp"/><Metric name="AI 建议接受率" value="76" unit="%" delta="↑ 14pp"/><Metric name="主观安全感" value="4.4" unit="/5" delta="↑ 0.8"/></div>
-        <small className="note">* 当前为首轮探索性测试目标值，后续将补充任务脚本、测试录像与原始记录。</small>
+        <div className="metric-grid"><Metric name="真实路线测试" value="10" unit="条" evidence="覆盖沪、苏、浙、皖公开地点"/><Metric name="真实算路成功率" value="90" unit="%" evidence="9 / 10 条返回有效路线"/><Metric name="双类 POI 返回率" value="90" unit="%" evidence="充电站与停车场同时返回"/><Metric name="途经点重算成功率" value="90" unit="%" evidence="9 / 10 条完成二次算路"/></div>
+        <small className="note">* 2026-09-01 自动化路线矩阵（n=10），中位接口响应约 6.7 秒。结果仅验证工程链路，不代表用户体验结论、实时充电状态或停车余位。</small>
       </section>
       <footer><div className="brand"><i>A</i><b>安心领航</b></div><p>下一代智能座舱出行体验概念项目 · 2027 校招作品集</p><a href="#top">回到顶部 ↑</a></footer>
     </main>
@@ -252,7 +252,7 @@ export default function Home() {
 
 function Heading({number,label,title,desc}:{number:string;label:string;title:React.ReactNode;desc?:string}) { return <div className="heading"><p><small>{number}</small><b>{label}</b></p><h2>{title}</h2>{desc && <span>{desc}</span>}</div>; }
 function Trip({time,title,detail,status,warning}:{time:string;title:string;detail:string;status:string;warning?:boolean}) { return <div className={`trip ${warning ? "warning" : ""}`}><time>{time}</time><i/><p><b>{title}</b><span>{detail}</span></p><small>{status}</small></div>; }
-function Metric({name,value,unit,delta}:{name:string;value:string;unit:string;delta:string}) { return <article><span>{name}</span><strong>{value}<small>{unit}</small></strong><p><i>{delta}</i> 对比基准方案</p></article>; }
+function Metric({name,value,unit,evidence}:{name:string;value:string;unit:string;evidence:string}) { return <article><span>{name}</span><strong>{value}<small>{unit}</small></strong><p><i>{evidence}</i></p></article>; }
 
 function parseRequest(value: string, origin: string, destination: string, startTime: string, battery: number) {
   const needsCharge = value.includes("电量") || value.includes("充电") || value.includes("补能") || battery < 80;
