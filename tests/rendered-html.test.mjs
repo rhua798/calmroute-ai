@@ -28,7 +28,7 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>[^<]*安心领航[^<]*<\/title>/i);
+  assert.match(html, /<title>[^<]*CalmRoute AI[^<]*<\/title>/i);
   assert.match(html, /让每一次出发/);
   assert.match(html, /AI 主动式出行助手/);
   assert.match(html, /上海/);
@@ -41,7 +41,7 @@ test("server-renders the case study with route-specific metadata", async () => {
   assert.equal(response.status, 200);
 
   const html = await response.text();
-  assert.match(html, /<title>[^<]*产品案例研究[^<]*<\/title>/i);
+  assert.match(html, /<title>[^<]*Product Case Study[^<]*<\/title>/i);
   assert.match(html, /从“路线导航”/);
   assert.match(html, /待验证产品假设/);
   assert.match(html, /Agent 任务编排/);

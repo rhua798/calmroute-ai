@@ -1,16 +1,16 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "产品案例研究 | 安心领航",
-  description: "CalmRoute AI 从出行不确定性到主动式 AI 导航体验的完整产品推导过程。",
+  title: "Product Case Study | CalmRoute AI",
+  description: "The product thinking behind CalmRoute AI, from travel uncertainty to proactive navigation.",
   openGraph: {
-    title: "产品案例研究 | 安心领航",
-    description: "从出行不确定性到主动式 AI 导航体验的完整产品推导过程。",
+    title: "Product Case Study | CalmRoute AI",
+    description: "From travel uncertainty to a proactive AI navigation experience.",
     images: [],
   },
   twitter: {
-    title: "产品案例研究 | 安心领航",
-    description: "从出行不确定性到主动式 AI 导航体验的完整产品推导过程。",
+    title: "Product Case Study | CalmRoute AI",
+    description: "From travel uncertainty to a proactive AI navigation experience.",
     images: [],
   },
 };
