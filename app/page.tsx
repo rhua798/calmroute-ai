@@ -13,8 +13,10 @@ type Incident = "charge" | "missed" | "road" | "parking";
 type PlanStop = { id: string; type: "start" | "pickup" | "charge" | "meal" | "recovery" | "arrival"; time: string; title: string; detail: string; status: string };
 type RoutePath = { distanceMeters: number; durationSeconds: number; strategy: string; tolls: number; trafficLights: number; steps: Array<{ instruction: string; road: string; distanceMeters: number; action: string }> };
 type RoutePoi = { id: string; name: string; location: string; address: string; type: string; typecode: string; distanceMeters: number; parkingType: string };
-type RouteApiResult = { source: "amap"; paths: RoutePath[]; chargingCandidates?: RoutePoi[]; parkingCandidates?: RoutePoi[] };
-type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number; source: "amap" | "demo"; distanceKm: number | null; driveMinutes: number; routeStrategies: string[]; routeOptions: RoutePath[]; chargingCandidates: RoutePoi[]; parkingCandidates: RoutePoi[] };
+type ResolvedPlace = { name: string; formattedAddress: string; location: string; city: string; district: string };
+type RouteRecovery = { type: "destination_access_point"; accessPoint: RoutePoi };
+type RouteApiResult = { source: "amap"; origin?: ResolvedPlace; destination?: ResolvedPlace; routeRecovery?: RouteRecovery | null; paths: RoutePath[]; chargingCandidates?: RoutePoi[]; parkingCandidates?: RoutePoi[] };
+type GeneratedPlan = { origin: string; destination: string; startTime: string; arrivalTime: string; battery: number; stops: PlanStop[]; revision: number; source: "amap" | "demo"; distanceKm: number | null; driveMinutes: number; routeStrategies: string[]; routeOptions: RoutePath[]; chargingCandidates: RoutePoi[]; parkingCandidates: RoutePoi[]; resolvedOrigin?: ResolvedPlace; resolvedDestination?: ResolvedPlace; routeRecovery?: RouteRecovery | null };
 
 const incidents: Record<Incident, {
   label: string;
@@ -79,6 +81,7 @@ export default function Home() {
   const [generated, setGenerated] = useState(true);
   const [planning, setPlanning] = useState(false);
   const [resolving, setResolving] = useState(false);
+  const [placesConfirmed, setPlacesConfirmed] = useState(true);
   const [routeError, setRouteError] = useState("");
   const [incident, setIncident] = useState<Incident>("charge");
   const [resolved, setResolved] = useState(false);
@@ -113,11 +116,13 @@ export default function Home() {
       setBasePlan(nextPlan);
       setPlan(nextPlan);
       setGenerated(true);
+      setPlacesConfirmed(false);
     } catch {
       const fallbackPlan = buildPlan(understanding);
       setBasePlan(fallbackPlan);
       setPlan(fallbackPlan);
       setGenerated(true);
+      setPlacesConfirmed(true);
       setRouteError("真实路线暂时不可用，当前已回退为演示估算。请检查地点名称或服务配置。");
     } finally {
       setPlanning(false);
@@ -202,12 +207,12 @@ export default function Home() {
             <p className="agent-note"><b>规划说明</b> 优先保证道路可通行与补能选择权，再优化总时长；停车与用餐作为行程节点统一编排。</p>
             <div className={`route-proof ${plan.source}`}><b>{plan.source === "amap" ? "高德真实算路" : "演示估算"}</b><span>{plan.distanceKm ? `${plan.distanceKm} km · ` : ""}驾车约 {formatDuration(plan.driveMinutes)}</span><small>{plan.source === "amap" ? `已返回 ${plan.routeStrategies.length} 个路线策略 · ${plan.chargingCandidates.length} 个沿途充电 POI · ${plan.parkingCandidates.length} 个目的地停车 POI` : "未连接实时道路数据"}</small></div>
           </div>
-          <article className="plan"><header><span>03 · 路线版本 R{plan.revision}</span><b>{plan.origin} → {plan.destination}</b></header>
+          {placesConfirmed ? <article className="plan"><header><span>03 · 路线版本 R{plan.revision}</span><b>{plan.origin} → {plan.destination}</b></header>
             {plan.stops.map(stop => <Trip key={stop.id} time={stop.time} title={stop.title} detail={stop.detail} status={stop.status} warning={stop.type === "charge" && incident === "charge" && !resolved} />)}
-          </article>
+          </article> : <article className="location-confirmation"><header><span>03 · 地点解析确认</span><b>确认后再采用路线</b></header><div><small>起点</small><b>{plan.resolvedOrigin?.formattedAddress || plan.origin}</b><span>{plan.resolvedOrigin?.district} · {plan.resolvedOrigin?.location}</span></div><i>↓</i><div><small>终点</small><b>{plan.resolvedDestination?.formattedAddress || plan.destination}</b><span>{plan.resolvedDestination?.district} · {plan.resolvedDestination?.location}</span></div>{plan.routeRecovery && <p><b>已恢复不可达终点</b> 将驾车导航至「{plan.routeRecovery.accessPoint.name}」，再前往原目的地。</p>}<div className="location-actions"><button type="button" onClick={() => setGenerated(false)}>返回修改</button><button type="button" onClick={() => setPlacesConfirmed(true)}>地址正确，采用路线 →</button></div></article>}
         </div>}
 
-        {generated && <div className="exception-lab">
+        {generated && placesConfirmed && <div className="exception-lab">
           <div className="workspace-head"><p><small>04</small><b>在途中注入异常</b></p><span>点击切换场景，观察 Agent 如何恢复行程</span></div>
           <div className="incident-tabs">{(Object.keys(incidents) as Incident[]).map(key => <button type="button" className={incident === key ? "active" : ""} onClick={() => selectIncident(key)} key={key}>{incidents[key].label}</button>)}</div>
           <article className={`agent ${resolved ? "done" : ""}`}>
@@ -242,8 +247,8 @@ export default function Home() {
 
       <section className="metrics" id="metrics">
         <Heading number="03" label="数据验证框架" title={<>用数据回答：<span>体验真的更好吗？</span></>} />
-        <div className="metric-grid"><Metric name="真实路线测试" value="10" unit="条" evidence="覆盖沪、苏、浙、皖公开地点"/><Metric name="真实算路成功率" value="90" unit="%" evidence="9 / 10 条返回有效路线"/><Metric name="双类 POI 返回率" value="90" unit="%" evidence="充电站与停车场同时返回"/><Metric name="途经点重算成功率" value="90" unit="%" evidence="9 / 10 条完成二次算路"/></div>
-        <small className="note">* 2026-09-01 自动化路线矩阵（n=10），中位接口响应约 6.7 秒。结果仅验证工程链路，不代表用户体验结论、实时充电状态或停车余位。</small>
+        <div className="metric-grid"><Metric name="真实路线执行" value="20" unit="次" evidence="同一矩阵完成两轮回归"/><Metric name="真实算路链路成功率" value="85" unit="%" evidence="17 / 20 次返回有效路线"/><Metric name="双类 POI 返回率" value="85" unit="%" evidence="充电站与停车场同时返回"/><Metric name="途经点重算成功率" value="85" unit="%" evidence="17 / 20 次完成二次算路"/></div>
+        <small className="note">* 2026-09-01 两轮自动化路线矩阵（10 条路线、共 20 次执行），单轮成功率为 90% / 80%，中位响应约 6.7 / 7.9 秒。结果仅验证工程链路，不代表用户体验结论或实时服务状态。</small>
       </section>
       <footer><div className="brand"><i>A</i><b>安心领航</b></div><p>下一代智能座舱出行体验概念项目 · 2027 校招作品集</p><a href="#top">回到顶部 ↑</a></footer>
     </main>
@@ -317,9 +322,10 @@ function buildPlan(input: ReturnType<typeof parseRequest>, realRoute?: RouteApiR
   }
   const extra = (input.needsCharge ? 18 : 0) + (input.needsMeal ? 45 : 0) + (input.hasCompanion ? 12 : 0);
   const arrivalTime = addMinutes(input.startTime, driveMinutes + extra);
-  const parkingPoi = realRoute?.parkingCandidates?.[0];
-  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: parkingPoi ? `停车建议：${parkingPoi.name} · ${parkingPoi.address}` : input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件", status: realRoute ? "高德路线" : "演示估算" });
-  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1, source: realRoute ? "amap" : "demo", distanceKm: primaryPath ? Math.round(primaryPath.distanceMeters / 100) / 10 : null, driveMinutes, routeStrategies: realRoute?.paths.map(path => path.strategy) ?? [], routeOptions: realRoute?.paths ?? [], chargingCandidates: realRoute?.chargingCandidates ?? [], parkingCandidates: realRoute?.parkingCandidates ?? [] };
+  const parkingPoi = realRoute?.routeRecovery?.accessPoint || realRoute?.parkingCandidates?.[0];
+  const arrivalDetail = realRoute?.routeRecovery ? `驾车至${realRoute.routeRecovery.accessPoint.name}，再前往原目的地 · 已自动恢复` : parkingPoi ? `停车建议：${parkingPoi.name} · ${parkingPoi.address}` : input.needsParking ? "已加入到达前停车检查" : "到达前将再次检查停车条件";
+  stops.push({ id: "arrival", type: "arrival", time: arrivalTime, title: `抵达${input.destination}`, detail: arrivalDetail, status: realRoute?.routeRecovery ? "接驳点路线" : realRoute ? "高德路线" : "演示估算" });
+  return { origin: input.origin, destination: input.destination, startTime: input.startTime, arrivalTime, battery: input.battery, stops: stops.sort((a, b) => toMinutes(a.time) - toMinutes(b.time)), revision: 1, source: realRoute ? "amap" : "demo", distanceKm: primaryPath ? Math.round(primaryPath.distanceMeters / 100) / 10 : null, driveMinutes, routeStrategies: realRoute?.paths.map(path => path.strategy) ?? [], routeOptions: realRoute?.paths ?? [], chargingCandidates: realRoute?.chargingCandidates ?? [], parkingCandidates: realRoute?.parkingCandidates ?? [], resolvedOrigin: realRoute?.origin, resolvedDestination: realRoute?.destination, routeRecovery: realRoute?.routeRecovery };
 }
 
 function applyIncident(current: GeneratedPlan, incident: Incident, realPath?: RoutePath, selectedPoi?: RoutePoi): GeneratedPlan {

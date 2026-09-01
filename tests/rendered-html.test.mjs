@@ -51,8 +51,8 @@ test("server-renders the CalmRoute AI product page", async () => {
   assert.match(html, /道路异常/);
   assert.match(html, /停车困难/);
   assert.match(html, /为什么推荐/);
-  assert.match(html, /真实算路成功率/);
-  assert.match(html, /2026-09-01 自动化路线矩阵/);
+  assert.match(html, /真实算路链路成功率/);
+  assert.match(html, /2026-09-01 两轮自动化路线矩阵/);
   assert.match(html, /上海/);
   assert.match(html, /莫干山/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
@@ -74,6 +74,6 @@ test("server-renders the case study with route-specific metadata", async () => {
   assert.match(html, /待验证产品假设/);
   assert.match(html, /Agent 任务编排/);
   assert.match(html, /工程验证/);
-  assert.match(html, /地图引擎数据错误/);
+  assert.match(html, /地图引擎错误/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

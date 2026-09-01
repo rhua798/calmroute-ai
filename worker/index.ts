@@ -78,6 +78,8 @@ type AmapPlaceResponse = {
   pois?: Array<{ id: string; name: string; location: string; address: string | string[]; type: string; typecode: string; distance?: string; business?: { parking_type?: string }; navi?: { entr_location?: string } }>;
 };
 
+type RoutePoi = { id: string; name: string; location: string; address: string; type: string; typecode: string; distanceMeters: number; parkingType: string };
+
 async function handleRouteRequest(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
   if (!env.AMAP_WEB_SERVICE_KEY) return json({ error: "AMAP_KEY_NOT_CONFIGURED" }, 503);
@@ -93,13 +95,25 @@ async function handleRouteRequest(request: Request, env: Env): Promise<Response>
       geocode(originName, env.AMAP_WEB_SERVICE_KEY),
       geocode(destinationName, env.AMAP_WEB_SERVICE_KEY),
     ]);
-    const direction = await drivingRoute(origin.location, destination.location, env.AMAP_WEB_SERVICE_KEY, waypoint);
+    let direction: AmapDirectionResponse;
+    let recoveryParking: RoutePoi[] = [];
+    let routeRecovery: { type: "destination_access_point"; accessPoint: RoutePoi } | null = null;
+    try {
+      direction = await drivingRoute(origin.location, destination.location, env.AMAP_WEB_SERVICE_KEY, waypoint);
+    } catch (error) {
+      if (!(error instanceof Error) || !/ENGINE_RESPONSE_DATA_ERROR|ROUTE_NOT_FOUND/.test(error.message)) throw error;
+      recoveryParking = await nearbySearch(destination.location, "停车场", 5000, env.AMAP_WEB_SERVICE_KEY);
+      const accessPoint = recoveryParking[0];
+      if (!accessPoint) throw error;
+      direction = await drivingRoute(origin.location, accessPoint.location, env.AMAP_WEB_SERVICE_KEY, waypoint);
+      routeRecovery = { type: "destination_access_point", accessPoint };
+    }
     const paths = direction.route?.paths ?? [];
     if (!paths.length) return json({ error: "ROUTE_NOT_FOUND" }, 404);
     const routeCenter = routeMidpoint(paths[0]?.steps) || midpoint(origin.location, destination.location);
     const [charging, parking] = await Promise.all([
       nearbySearch(routeCenter, "充电站", 30000, env.AMAP_WEB_SERVICE_KEY),
-      nearbySearch(destination.location, "停车场", 5000, env.AMAP_WEB_SERVICE_KEY),
+      recoveryParking.length ? Promise.resolve(recoveryParking) : nearbySearch(destination.location, "停车场", 5000, env.AMAP_WEB_SERVICE_KEY),
     ]);
 
     return json({
@@ -107,6 +121,7 @@ async function handleRouteRequest(request: Request, env: Env): Promise<Response>
       origin: { name: originName, ...origin },
       destination: { name: destinationName, ...destination },
       routeCenter,
+      routeRecovery,
       chargingCandidates: charging,
       parkingCandidates: parking,
       paths: paths.slice(0, 3).map(path => ({
@@ -136,13 +151,27 @@ function normalizeCoordinate(value: unknown) {
 }
 
 async function geocode(address: string, key: string) {
-  const params = new URLSearchParams({ key, address, output: "JSON" });
+  const query = geocodeQuery(address);
+  const params = new URLSearchParams({ key, address: query.keyword, output: "JSON" });
+  if (query.city) {
+    params.set("city", query.city);
+    params.set("citylimit", "true");
+  }
   const response = await fetch(`https://restapi.amap.com/v3/geocode/geo?${params}`, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error("AMAP_GEOCODE_UNAVAILABLE");
   const data = await response.json() as AmapGeocodeResponse;
   const result = data.geocodes?.[0];
   if (data.status !== "1" || !result?.location) throw new Error(data.info === "OK" ? "PLACE_NOT_FOUND" : `AMAP_${data.info || "GEOCODE_ERROR"}`);
   return { formattedAddress: result.formatted_address, location: result.location, city: String(result.city || ""), district: result.district };
+}
+
+function geocodeQuery(address: string) {
+  const cityMatch = address.match(/^(.{2,8}?市)/);
+  if (!cityMatch) return { city: "", keyword: address };
+  const city = cityMatch[1];
+  const withoutCity = address.slice(city.length);
+  const keyword = withoutCity.replace(/^.{2,8}?(?:区|县|市)/, "") || withoutCity || address;
+  return { city, keyword };
 }
 
 async function drivingRoute(origin: string, destination: string, key: string, waypoint = "") {
@@ -155,7 +184,7 @@ async function drivingRoute(origin: string, destination: string, key: string, wa
   return data;
 }
 
-async function nearbySearch(location: string, keywords: string, radius: number, key: string) {
+async function nearbySearch(location: string, keywords: string, radius: number, key: string): Promise<RoutePoi[]> {
   const params = new URLSearchParams({ key, location, keywords, radius: String(radius), sortrule: "distance", page_size: "6", page_num: "1", show_fields: "business,navi", output: "JSON" });
   const response = await fetch(`https://restapi.amap.com/v5/place/around?${params}`, { signal: AbortSignal.timeout(12000) });
   if (!response.ok) return [];
