@@ -22,11 +22,11 @@ async function render(path = "/") {
   );
 }
 
-async function callWorker(path, init = {}) {
+async function callWorker(path, init = {}, env = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-api`);
   const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(new Request(`http://localhost${path}`, init), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } }, { waitUntil() {}, passThroughOnException() {} });
+  return worker.fetch(new Request(`http://localhost${path}`, init), { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) }, ...env }, { waitUntil() {}, passThroughOnException() {} });
 }
 
 test("server-renders the CalmRoute AI product page", async () => {
@@ -62,6 +62,50 @@ test("route API keeps the map key server-side", async () => {
   const response = await callWorker("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: "上海虹桥火车站", destination: "莫干山风景名胜区" }) });
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "AMAP_KEY_NOT_CONFIGURED" });
+});
+
+test("route API rejects malformed JSON before calling the map service", async () => {
+  const response = await callWorker(
+    "/api/route",
+    { method: "POST", headers: { "content-type": "application/json" }, body: "{" },
+    { AMAP_WEB_SERVICE_KEY: "test-only" },
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "INVALID_JSON" });
+});
+
+test("route API coalesces identical requests while a route is in flight", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-coalesce`);
+  const { default: worker } = await import(workerUrl.href);
+  const originalFetch = globalThis.fetch;
+  let upstreamCalls = 0;
+
+  globalThis.fetch = async (input) => {
+    upstreamCalls += 1;
+    const url = new URL(String(input));
+    if (url.pathname.includes("/geocode/geo")) {
+      const address = url.searchParams.get("address") ?? "";
+      const isOrigin = address.includes("上海");
+      return Response.json({ status: "1", info: "OK", geocodes: [{ formatted_address: address, location: isOrigin ? "121.30,31.20" : "120.00,30.50", city: isOrigin ? "上海市" : "湖州市", district: "测试区" }] });
+    }
+    if (url.pathname.includes("/direction/driving")) {
+      return Response.json({ status: "1", info: "OK", route: { paths: [{ distance: "200000", duration: "9000", tolls: "80", steps: [{ distance: "200000", polyline: "121.30,31.20;120.00,30.50" }] }] } });
+    }
+    return Response.json({ status: "1", info: "OK", pois: [] });
+  };
+
+  try {
+    const env = { AMAP_WEB_SERVICE_KEY: "test-only", ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } };
+    const ctx = { waitUntil() {}, passThroughOnException() {} };
+    const body = JSON.stringify({ origin: "上海虹桥火车站", destination: "莫干山风景名胜区" });
+    const request = () => worker.fetch(new Request("http://localhost/api/route", { method: "POST", headers: { "content-type": "application/json" }, body }), env, ctx);
+    const responses = await Promise.all([request(), request()]);
+    assert.deepEqual(responses.map(response => response.status), [200, 200]);
+    assert.equal(upstreamCalls, 5);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("server-renders the case study with route-specific metadata", async () => {

@@ -101,15 +101,15 @@ export default function Home() {
     setBatteryInput(nextBattery);
   }
 
-  async function generatePlan(event: FormEvent) {
-    event.preventDefault();
+  async function generatePlan(event?: FormEvent) {
+    event?.preventDefault();
     if (!request.trim()) return;
     setPlanning(true);
     setGenerated(false);
     setResolved(false);
     setRouteError("");
     try {
-      const response = await fetch("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: understanding.origin, destination: understanding.destination }) });
+      const response = await fetch("/api/route", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ origin: understanding.origin, destination: understanding.destination }), signal: AbortSignal.timeout(45000) });
       const data = await response.json() as RouteApiResult & { error?: string };
       if (!response.ok || !data.paths?.length) throw new Error(data.error || "ROUTE_REQUEST_FAILED");
       const nextPlan = buildPlan(understanding, data);
@@ -117,13 +117,14 @@ export default function Home() {
       setPlan(nextPlan);
       setGenerated(true);
       setPlacesConfirmed(false);
-    } catch {
+    } catch (error) {
       const fallbackPlan = buildPlan(understanding);
       setBasePlan(fallbackPlan);
       setPlan(fallbackPlan);
       setGenerated(true);
       setPlacesConfirmed(true);
-      setRouteError("真实路线暂时不可用，当前已回退为演示估算。请检查地点名称或服务配置。");
+      const message = error instanceof Error ? error.message : "";
+      setRouteError(/TIMEOUT|LIMIT|UNAVAILABLE|aborted/i.test(message) ? "地图服务响应较慢，当前已安全回退为演示估算。你可以稍后重试真实算路。" : "真实路线暂时不可用，当前已回退为演示估算。请确认地点名称后重试。");
     } finally {
       setPlanning(false);
     }
@@ -197,7 +198,7 @@ export default function Home() {
           <div className="example-row"><span>试试示例</span>{examples.map((example, index) => <button type="button" key={example} onClick={() => { const parsed = parseExample(example); setRequest(example); setOriginInput(parsed.origin); setDestinationInput(parsed.destination); setDepartureInput(parsed.time); setBatteryInput(parsed.battery); }}>场景 {index + 1}</button>)}</div>
           <button className="generate-button" disabled={!request.trim() || planning}>{planning ? "正在理解需求并编排行程…" : "生成安心行程"}<b>{planning ? "•••" : "→"}</b></button>
         </form>
-        {routeError && <p className="route-error" role="status">{routeError}</p>}
+        {routeError && <div className="route-error" role="status"><span>{routeError}</span><button type="button" onClick={() => generatePlan()} disabled={planning}>{planning ? "正在重试…" : "重试真实算路"}</button></div>}
 
         {generated && <div className="agent-workspace" aria-live="polite">
           <div className="understood">

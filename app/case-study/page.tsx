@@ -97,7 +97,7 @@ export default function CaseStudy() {
           <article><small>TEST 03</small><h3>异常恢复验证</h3><p>选取真实备选 POI 作为途经点二次算路，记录距离、时间、响应延迟与失败原因。</p></article>
         </div>
         <div className="success-metrics"><span><b>20 次</b>两轮路线执行</span><span><b>85%</b>真实算路链路成功率</span><span><b>85%</b>双类 POI 返回率</span><span><b>85%</b>途经点重算成功率</span></div>
-        <p className="evidence-note"><b>已知限制：</b>两轮单次成功率分别为 90% 与 80%，暴露第三方超时和地图引擎错误的波动；宁波场景虽返回成功但距离异常，因此新增解析地址确认步骤。工程测试不衡量理解、信任或驾驶安全。</p>
+        <p className="evidence-note"><b>已知限制：</b>两轮单次成功率分别为 90% 与 80%，暴露第三方超时和地图引擎错误的波动；宁波场景虽返回成功但距离异常，因此新增解析地址确认步骤。当前已加入相同在途请求合并、地图调用排队、一次退避重试与前端安全回退；地址不做持久化缓存。稳定性修复尚待下一轮完整路线矩阵复测，工程测试也不衡量理解、信任或驾驶安全。</p>
       </section>
 
       <section className="case-cta"><p>NEXT / INTERACTIVE PROTOTYPE</p><h2>查看“充电站排队”如何触发主动决策。</h2><a href="/#demo">进入交互原型 <span>↗</span></a></section>
